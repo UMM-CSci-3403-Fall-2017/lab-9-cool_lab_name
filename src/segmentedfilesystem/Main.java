@@ -18,7 +18,23 @@ public class Main {
 
 		client(port, address);
 	}
-
+	
+	public static class packObj{
+		int fileID;
+		boolean lastData;
+		byte[] data;
+		String filename;
+		int packNum;
+		
+		public packObj(){
+			fileID = 0;
+			lastData = false;
+			data = null;
+			filename = "";
+			packNum = 0;
+		}			
+	}
+	
 	public static void client(int port, InetAddress address) {
 		try {  	
 			DatagramSocket socket = new DatagramSocket(port);
@@ -26,39 +42,42 @@ public class Main {
 			f1Done = false;
 			f2Done = false;
 			f3Done = false;
-
+			
+			//Make a new byte array the size of the largest packet that can be sent
 			byte[] outByteData = new byte[1004];
 
 			outByteData = "".getBytes();
-
+			
+			//Send an empty packet to the server to tell the server to start sending packets back
 			DatagramPacket outPacket = new DatagramPacket(outByteData, outByteData.length, 
 					address, port);
 
 			socket.send(outPacket);
 
+			//Create ArrayLists to store all of the packets being received
 			ArrayList<Integer> IDArr = new ArrayList<Integer>();
 
 			ArrayList<String> filenameArr = new ArrayList<String>();
 
-			ArrayList<byte[]> f1Bytes = new ArrayList<byte[]>();
-			ArrayList<byte[]> f2Bytes = new ArrayList<byte[]>();
-			ArrayList<byte[]> f3Bytes = new ArrayList<byte[]>();
+			ArrayList<packObj> f1Packets = new ArrayList<packObj>();
+			ArrayList<packObj> f2Packets = new ArrayList<packObj>();
+			ArrayList<packObj> f3Packets = new ArrayList<packObj>();
 
+			//Loops until all of the packets have been received from the server
 			for (int i = 0; i < 20; i++) {
 				//while(!f1Done && !f2Done && !f3Done) {
 				byte[] inByteData = new byte[1028];
-				String filename = "";
-				boolean lastData = false;
 				
-				//set inbyte Data
+				//Set inbyte Data
 				DatagramPacket inPacket = new DatagramPacket(inByteData, inByteData.length);
 
 				socket.receive(inPacket);
 
 				inByteData = inPacket.getData();
 
+				packObj packet = new packObj();
 				//------------------------------------
-				//test string receiving functionality
+				//test string receiving functionalityint fileID = ((int) inByteData[1]);
 				//String testText = new String(inByteData, 0, inPacket.getLength());
 
 				//System.out.println("byte: " + Integer.toBinaryString(inByteData[0]));
@@ -67,36 +86,36 @@ public class Main {
 				//-------------------------------------
 				
 				//add file id if it is new
-				int fileID = ((int) inByteData[1]);
-				if (IDArr.contains(fileID)!=true) {
-					IDArr.add(fileID);
+				packet.fileID = ((int) inByteData[1]);
+				if (IDArr.contains(packet.fileID)!=true) {
+					IDArr.add(packet.fileID);
 				}
 				
-				checkFileCompletion(inPacket, IDArr);
+				checkFileCompletion(inPacket, packet);
 
 				//check if header (the last bit of the status byte)
 				if(inByteData[0]==0){					
 					byte[] fn = Arrays.copyOfRange(inByteData, 2, inPacket.getLength());
-					filename = new String(fn, "US-ASCII");
-					filenameArr.add(filename);
+					packet.filename = new String(fn, "US-ASCII");
+					filenameArr.add(packet.filename);
 				
 				} else {
 					//it is a data file
 					//packet number is bytes 3-4, data is every byte after 4 
+					byte[] pn = Arrays.copyOfRange(inByteData, 2, 3);
+					//packet.packNum = (int) pn[0] + (int) pn[1];
+					
+					
 					//check if it is the last data packet
 					if(inByteData[0]==3){
-						lastData = true;
+						packet.lastData = true;
 					} 
 					//store packet data
 					byte[] data = Arrays.copyOfRange(inByteData, 4, inPacket.getLength());
-					
-					//TODO: write "storeData" function to check file id and add to respective array list
-					//storeData(inpacket, fileID)
-					
-					//for now add to file1 arrayList for testing	
-					f1Bytes.add(data);
+					packet.data = data;
+					//check file id and add to respective array list
+					storeData(packet, packet.fileID, f1Packets, f2Packets, f3Packets);
 				}
-
 			}    
 			//all three ArrayLists should contain respective files data
 
@@ -113,7 +132,21 @@ public class Main {
 			//	   os.write(f1Bytes);
 			//	   os.close();
 			//	}
-
+			
+			System.out.println("f1 packet: ");
+			for(int i = 0; i < f1Packets.size(); i++){
+				System.out.println(f1Packets.get(i).fileID);
+			}
+			
+			System.out.println("f2 packet: ");
+			for(int i = 0; i < f2Packets.size(); i++){
+				System.out.println(f2Packets.get(i).fileID);
+			}
+			
+			System.out.println("f3 packet: ");
+			for(int i = 0; i < f3Packets.size(); i++){
+				System.out.println(f3Packets.get(i).fileID);
+			}
 			socket.close();	
 			System.out.println("DONE");
 
@@ -122,7 +155,7 @@ public class Main {
 		}
 	}
 
-	public static void checkFileCompletion(DatagramPacket lastPacket, ArrayList<Integer> IDArr) {
+	public static void checkFileCompletion(DatagramPacket lastPacket, packObj packet) {
 		//check if all files gathered for f1 gathered
 
 		//if file is complete set appropriate bool to true
@@ -139,7 +172,26 @@ public class Main {
 		f3Done = true;     
 	}
 	
-	public static void storeData(DatagramPacket packet, int fileID) {
-		//TODO: check file id and add data to respective array list
+	public static void storeData(packObj packet, int fileID, ArrayList<packObj> f1, ArrayList<packObj> f2, ArrayList<packObj> f3 ) {
+		if(f1.size() == 0){
+			f1.add(packet);
+		}
+		else if(f1.get(0).fileID == packet.fileID){
+			f1.add(packet);
+		}
+		else if(f2.size() == 0){
+			f2.add(packet);
+		}
+		else if(f2.get(0).fileID == packet.fileID){
+			f2.add(packet);
+		}
+		else if(f3.size() == 0){
+			f3.add(packet);
+		}		
+		else if(f3.get(0).fileID == packet.fileID){
+			f3.add(packet);
+		}
 	}
 }
+
+
