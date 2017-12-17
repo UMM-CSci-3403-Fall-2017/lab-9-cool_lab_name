@@ -14,8 +14,6 @@ public class Main {
 	private static boolean f2Done;
 	private static boolean f3Done;
 	
-	private static int fileIndex;
-
 	public static void main(String[] args) throws UnknownHostException {
 		//call client back-end on desired host address and port
 		int port = 6014;
@@ -25,7 +23,6 @@ public class Main {
 	
 	public static class packObj{
 		int fileID;
-		boolean lastData;
 		byte[] data;
 		String filename;
 		int packNum;
@@ -33,7 +30,6 @@ public class Main {
 		//constructor with initialized sub-fields
 		public packObj(){
 			fileID = 0;
-			lastData = false;
 			data = null;
 			filename = "";
 			packNum = 0;
@@ -50,44 +46,32 @@ public class Main {
 	
 	public static void client(int port, InetAddress address) {
 		try {  
-			
 			//establish socket
 			DatagramSocket socket = new DatagramSocket(port);
 			
-			//initialize var values
+			//initialize file completion values
 			f1Done = false;
 			f2Done = false;
 			f3Done = false;
-			
-			fileIndex = 0;
 			
 			//Make a new empty byte array the size of the largest packet that can be sent
 			byte[] outByteData = new byte[1004];
 			outByteData = "".getBytes();
 			
 			//Send an empty packet to the server to tell the server to start sending packets back
-			DatagramPacket outPacket = new DatagramPacket(outByteData, outByteData.length, 
-					address, port);
-
+			DatagramPacket outPacket = new DatagramPacket(outByteData, outByteData.length, address, port);
 			socket.send(outPacket);
 
 			//Create ArrayLists to store all of the packets being received
-			ArrayList<packObj> lastPackets = new ArrayList<packObj>();
-			int[] fileLengths = new int[3];
-
-			ArrayList<String> filenameArr = new ArrayList<String>();
+			ArrayList<packObj> lastPackets = new ArrayList<packObj>();;
+			ArrayList<packObj> headerPackets = new ArrayList<packObj>();
 
 			ArrayList<packObj> f1Packets = new ArrayList<packObj>();
 			ArrayList<packObj> f2Packets = new ArrayList<packObj>();
 			ArrayList<packObj> f3Packets = new ArrayList<packObj>();
 
-			//Loops until all of the packets have been received from the server
-			
-			//placeholder loop conditions for testing
-			for (int i = 0; i < 70; i++) {
-				
-				//run until file completion confirmed
-				//while(!f1Done && !f2Done && !f3Done) {
+			//loops until all of the packets have been received from the server
+			while(!f1Done && !f2Done && !f3Done) {
 				
 				//create buffer to store incoming data
 				byte[] inByteData = new byte[1028];
@@ -99,30 +83,21 @@ public class Main {
 				
 				//create packet object to store sub-fields
 				packObj packet = new packObj();
-				
-				//------------------------------------
-				//test string receiving functionality
-				//int fileID = ((int) inByteData[1]);
-				//String testText = new String(inByteData, 0, inPacket.getLength());
 
-				//System.out.println("byte: " + Integer.toBinaryString(inByteData[0]));
-				//System.out.println("byte: " + inByteData[0]);
-				//System.out.println("packet text: " + testText);
-				//-------------------------------------
-				
 				//add file id if it is new
 				packet.fileID = ((int) inByteData[1]);
 				
-				//checkFileCompletion(f1Packets, f2Packets, f3Packets, lastPackets);
+				//make sure you still need to check packets
+				checkFileCompletion(f1Packets, f2Packets, f3Packets, lastPackets);
 
 				//check if header (the last bit of the status byte)
 				if(inByteData[0]==0){
 					byte[] fn = Arrays.copyOfRange(inByteData, 2, inPacket.getLength());
 					packet.filename = new String(fn, "UTF-8");
-					filenameArr.add(packet.filename);			
+					headerPackets.add(packet);			
 				} else {
 					//it is a data file
-					//packet number is bytes 3-4, data is every byte after 4 
+					//packet number is bytes 3-4, data is every byte after 4 (copyOfRange was breaking for this data) 
 					byte[] pn = new byte[2];
 					pn[0] = inByteData[2];
 					pn[1] = inByteData[3];
@@ -132,12 +107,10 @@ public class Main {
 
 					//check if it is the last data packet
 					if(inByteData[0]%4==3){
-						packet.lastData = true;
-						fileLengths[fileIndex] = packet.packNum;
-						fileIndex++;
 						//store it so we can access its sub-fields
 						lastPackets.add(packet);
 					} 
+					
 					//store packet data
 					byte[] data = Arrays.copyOfRange(inByteData, 4, inPacket.getLength());
 					packet.data = data;
@@ -146,79 +119,67 @@ public class Main {
 					storeData(packet, packet.fileID, f1Packets, f2Packets, f3Packets);
 				}
 			}
-
-			//test code/print statements, will be removed
-			
-			//System.out.println("file 1 packets should have the id: " + lastPackets.get(0).fileID + 
-			//		"   and the filename: " + filenameArr.get(0));
-			
-			//System.out.println("file 2 packets should have the id: " + lastPackets.get(1).fileID + 
-			//		"   and the filename: " + filenameArr.get(1));
-			
-			//System.out.println(lastPackets.size() + "   "  + filenameArr.size());
-			
-			//if (lastPackets.size()==3 && filenameArr.size()==3){
-			//	System.out.println("file 3 packets should have the id: " + lastPackets.get(2).fileID + 
-			//		"   and the filename: " + filenameArr.get(2));
-			//}
-			
-			//all three ArrayLists should contain respective files data
-			
-			for (packObj p: f2Packets){
-				System.out.println("packNum is " + p.packNum);
-			}
-			
-			System.out.println("----------------------");
 			
 			//sort f1Bytes, f2Btyes, f3Bytes by packet number
+			Collections.sort(f1Packets, packObj.packetCompare);
 			Collections.sort(f2Packets, packObj.packetCompare);
+			Collections.sort(f3Packets, packObj.packetCompare);
 			
-			for (packObj p: f2Packets){
-				System.out.println("packNum is " + p.packNum + " " + (fileLengths[1]) + " " + (lastPackets.get(1).packNum));
-			}
+			//write files out to their filenames, given data, headers, and file number
+			writeFile(f1Packets, headerPackets, 1);
+			writeFile(f2Packets, headerPackets, 2);
+			writeFile(f3Packets, headerPackets, 3);
 			
-			
-			//write files out to their filenames
-			//try (FileOutputStream os = new FileOutputStream("relative path" + filenameArr[0])) {
-			//	   os.write(f1Bytes);
-			//	   os.close();
-			//	}
-			
-			//System.out.println("f1 packet: ");
-			//for(int i = 0; i < f1Packets.size(); i++){
-				//System.out.println(f1Packets.get(i).fileID);
-			//}
-			
-			//System.out.println("f2 packet: ");
-			//for(int i = 0; i < f2Packets.size(); i++){
-				//System.out.println(f2Packets.get(i).fileID);
-			//}
-			
-			//System.out.println("f3 packet: ");
-			//for(int i = 0; i < f3Packets.size(); i++){
-				//System.out.println(f3Packets.get(i).fileID);
-			//}
+			//close socket
 			socket.close();	
-			System.out.println("DONE");
 
 		} catch (IOException e) {
 			System.out.println(e);
 		}
 	}
+	
+	public static void writeFile(ArrayList<packObj> filePackets, ArrayList<packObj> headerPackets, int fileNumber) {
+		//open filestream for specified filename
+		try (FileOutputStream os = new FileOutputStream("src/" + headerPackets.get(fileNumber-1).filename)) {
+			   //make sure your header packet matches your file packets
+			   if(filePackets.get(0).fileID == headerPackets.get(fileNumber-1).fileID) {
+				   //write data to stream
+				   for(int n = 0; n < filePackets.size(); n++) {
+					   os.write(filePackets.get(n).data);
+				   }
+			   } else {
+				   //check for improper parameter inputs
+				   System.out.println("Wrong file number");
+			   }
+			   //close stream
+			   os.close();
+		} catch (IOException e) {
+			System.out.println(e);
+		}
+	
+	}
 
 	public static void checkFileCompletion(ArrayList<packObj> f1, ArrayList<packObj> f2, ArrayList<packObj> f3, ArrayList<packObj> lastPackets) {
+
 		//check and see if all last packets have been received
 		if(lastPackets.size()==3){
+				
+				//gather file sizes
+				ArrayList<Integer> sizes = new ArrayList<Integer>();
+				sizes.add(f1.size());
+				sizes.add(f2.size());
+				sizes.add(f3.size());
+				
 				//check if all files gathered for f1 gathered
-				if(lastPackets.get(0).packNum == f1.size()){
+				if(sizes.contains(lastPackets.get(0).packNum)){
 					f1Done = true;
 				} 
 				//check if all files gathered for f2 gathered
-				if (lastPackets.get(1).packNum == f2.size()){
+				if(sizes.contains(lastPackets.get(1).packNum)){
 					f2Done = true;
 				}
 				//check if all files gathered for f3 gathered
-				if (lastPackets.get(2).packNum == f3.size()){
+				if(sizes.contains(lastPackets.get(2).packNum)){
 					f3Done = true;
 				}
 		}
